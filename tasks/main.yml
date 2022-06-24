@@ -1,2 +1,86 @@
 ---
-# tasks file for letsencrypt
+
+- set_fact:
+    mem_available: "{{(ansible_facts.memory_mb.real.free+ansible_facts.memory_mb.swap.free | default (0))}}"
+- name: Fixing swap for VPS
+  include_role:
+    name: geerlingguy.swap
+  vars:
+    swap_file_size_mb: '{{ansible_facts.memory_mb.swap.free | default (0) + 1024}}'
+  when: mem_available|int < 768
+- include_tasks:
+    file: install_certs.yml
+- include_tasks:
+    file: check_firezone.yml
+- file:
+    path: "/etc/firezone"
+    state: directory
+- stat:
+    path: /etc/firezone/firezone.rb
+  register: config_before
+- name: "Configuring"
+  template:
+    src: files/firezone.rb
+    dest: /etc/firezone/firezone.rb
+- blockinfile:
+    path: /etc/firezone/firezone.rb
+    insertbefore: BOF
+    block: "{{firezone_config}}"
+  when: firezone_config is defined
+- stat:
+    path: /etc/firezone/firezone.rb
+  register: config_after
+
+- set_fact:
+    config_changed: "{{'checksum' not in config_before.stat or config_after.stat.checksum!=config_before.stat.checksum}}"
+
+- block:
+    - set_fact:
+        firezone_dir: "/opt/firezone"
+    - apt:
+        name: [ certbot, wireguard ]
+        state: present
+        update_cache: yes
+    - name: Add the wireguard module
+      community.general.modprobe:
+        name: wireguard
+        state: present
+    - file:
+        path: "{{firezone_dir}}"
+        state: directory
+    - name: "Prerequisites for Firezone"
+      file:
+        path: "{{firezone_dir}}/firezone_install.sh"
+        state: absent
+    - name: "Downloading installer"
+      get_url:
+        url: https://github.com/firezone/firezone/raw/master/scripts/install.sh
+        dest: "{{firezone_dir}}/firezone_install.sh"
+        mode: 0755
+    - file:
+        path: '{{firezone_dir}}/firezone_install.log'
+        state: absent
+    - name: "Installing Firezone"
+      ansible.builtin.expect:
+        command: '/bin/bash -c "{{firezone_dir}}/firezone_install.sh | tee {{firezone_dir}}/firezone_install.log"'
+        echo: yes
+        timeout: null
+        responses:
+          "Enter the administrator email you'd like to use for logging into this Firezone instance:": "{{firezone_admin}}"
+          "Could we email you to ask for product feedback.*": "n"
+          "Press <ENTER> to install .*": ""
+    - name: "Resetting admin password"
+      file:
+        name: "{{firezone_dir}}/firezone_admin_password"
+        state: absent
+    - shell: "firezone-ctl create-or-reset-admin | grep -E 'Email|Password' | awk '{print $2}' > {{firezone_dir}}/firezone_admin_password"
+    - shell: firezone-ctl reconfigure
+
+
+  when: (firezone_running == False) or (firezone_redeploy | default (False)  == True ) or (config_changed ==True)
+
+- include_tasks:
+    file: check_firezone.yml
+- fail:
+    msg: "Unable to bring up firezone"
+  when: firezone_running==False

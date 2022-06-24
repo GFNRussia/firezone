@@ -1,0 +1,52 @@
+- name: Include letsencrypt-renewer role
+  include_role:
+    name: letsencrypt-renewer
+
+- name: Install certificates
+  block:
+    - file:
+        path: "{{item}}"
+        state: directory
+      with_items:
+        - "/etc/letsencrypt/live/{{server_url}}"
+        - "/etc/letsencrypt/archive/{{server_url}}"
+    - copy:
+        src: "{{item.src}}"
+        dest: "/etc/letsencrypt/archive/{{server_url}}/{{item.dest}}.pem"
+      with_items:
+        - src: "{{letsencrypt.cert}}"
+          dest: "cert"
+        - src: "{{letsencrypt.chain}}"
+          dest: "chain"
+        - src: "{{letsencrypt.fullchain}}"
+          dest: "fullchain"
+        - src: "{{letsencrypt.privkey}}"
+          dest: "privkey"
+
+    - file:
+        src: "/etc/letsencrypt/archive/{{server_url}}/{{item}}"
+        dest: "/etc/letsencrypt/live/{{server_url}}/{{item}}"
+        state: link
+      with_items:
+        - cert.pem
+        - chain.pem
+        - fullchain.pem
+        - privkey.pem
+  when:
+    - letsencrypt.cert is defined
+    - letsencrypt.chain is defined
+    - letsencrypt.fullchain is defined
+    - letsencrypt.privkey is defined
+
+- name: Add certbot role
+  include_role:
+    name: geerlingguy.certbot
+  vars:
+    certbot_create_if_missing: true
+    certbot_create_method: standalone
+    certbot_auto_renew: false
+    certbot_admin_email: "info+letsencrypt@{{server_url}}"
+    certbot_create_standalone_stop_services: [ ]
+    certbot_certs:
+      - domains:
+          - "{{server_url}}"

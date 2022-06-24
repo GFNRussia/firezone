@@ -1,0 +1,9 @@
+- block:
+    - name: "Checking Firezone status"
+      shell:
+        cmd: '/bin/bash -c "firezone-ctl status"  '
+      register: result
+      ignore_errors: yes
+      failed_when: false
+    - set_fact:
+        firezone_running: "{{result.rc == 0}}"
