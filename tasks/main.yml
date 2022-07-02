@@ -9,9 +9,9 @@
     swap_file_size_mb: '{{ansible_facts.memory_mb.swap.free | default (0) + 1024}}'
   when: mem_available|int < 768
 - apt:
-  name: [ wireguard, python3-pip, curl, jq ]
-  state: present
-  update_cache: yes
+    name: [ wireguard, python3-pip, curl, jq ]
+    state: present
+    update_cache: yes
 - name: install pexpect
   pip:
     name: pexpect
