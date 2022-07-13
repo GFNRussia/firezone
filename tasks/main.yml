@@ -25,6 +25,14 @@
 - stat:
     path: /etc/firezone/firezone.rb
   register: config_before
+- name: "Get firezone router address"
+  shell:
+    cmd: "python -c \"import ipaddress;print(list(ipaddress.IPv4Network('{{vpn_subnet}}').hosts())[0])\""
+  register: out
+- set_fact:
+    vpn_host: "{{out.stdout}}"
+- set_fact:
+    fz_vpn_host: "{{out.stdout}}"
 - name: "Configuring"
   template:
     src: files/firezone.rb
